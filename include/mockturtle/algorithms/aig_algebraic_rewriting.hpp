@@ -64,56 +64,129 @@ private:
   bool try_associativity( node n )
   {
     /* TODO */
-
+    
     signal s2_critical, s2_non_critical, s1_critical, s1_non_critical, new_and;
 
-    bool is_applicable = false;
-
-    if ( ntk.is_on_critical_path( n ) ){
-      is_applicable = true;
-      ntk.foreach_fanin( n,
-                         [&]( signal const& s1 ) {             // look at the 2 fan in signals of n
-                           node n_parent = ntk.get_node( s1 ); // take the node n_parent pointed by signal s1
-                           if ( ntk.is_on_critical_path( n_parent ) ) // if n_parent is on the critical path
-                           {
-                             s1_critical = s1;
-                             if ( !ntk.is_complemented( s1_critical ) ) // if s1 is not complemented ( AND gate, not a NAND, associativity applicable)
-                             {
-                               // check with input is on the critical path
-                               ntk.foreach_fanin( n_parent,
-                                                  [&]( signal const& s2 ) {
-                                                    node n_input = ntk.get_node(s2); // node pointed by s2
-                                                    if(ntk.is_on_critical_path(n_input)){ // if n_input is on the critical path
-                                                      s2_critical = s2;
-                                                      ntk.substitute_node(n_input, s2_critical); // node n_input is substituted by signal s2_critical
-                                                    }
-                                                    else
-                                                      s2_non_critical = s2
-                                                  } )
-                             }
-                             else
-                               return (is_applicable = false); // Associativity is not applicable, the node on the critical path is complemented (NAND)
-                           }
-                           else
-                             s1_non_critical = s1;
-                         } )
+    bool is_appl = false;                  // is applicable ?
+    bool is_adv1 = false, is_adv2 = false; // is advantageous ? (primary and secondary fan-in)
+    uint32_t level_critical = 0, level_non_critical = 0;
+    
+    if ( !ntk.is_on_critical_path( n ) )
+    {
+      return false;
     }
 
-    if (is_applicable){
-      new_and = ntk.create_and(s1_non_critical, s2_non_critical); // creation of the new node
-      s1_non_critical = new_and;
-      // s1_critical = s2_critical;
+    // check for applicability and benefit
+    ntk.foreach_fanin( n, [&]( signal const& s1 ) { // access to the 2 primary fan-in signal
+      node child1 = ntk.get_node( s1 );
+      if ( ntk.is_on_critical_path( child1 ) )
+      { // check critical path of fan-in
+        s1_critical = s1;
+        level_critical = ntk.level( child1 ); // save level of critical node
+        if ( !ntk.is_complemented( s1 ) ) // if not complemented, associativity is applicable
+        { 
+          is_appl = true;
+          ntk.foreach_fanin( child1, [&]( signal const& s2 ) { // access to the 2 secondary fan-in signal
+            if ( ntk.is_on_critical_path( ntk.get_node( s2 ) ) )
+            {
+              s2_critical = s2;
+              // if only one secondary fan-in node is on critical path associativity can be advantageous
+              // if both secondary fan-in nodes are on critical path associativity is not advantageous
+              if ( !is_adv2 )
+              {
+                is_adv2 = true;
+              }
+              else
+              {
+                is_adv2 = false;
+              }
+            }
+            else
+            {
+              s2_non_critical = s2;
+            }
+            return;
+          } );
+        }
+
+        // if only one primary fan-in node is on critical path associativity can be advantageous
+        // if both primary fan-in nodes are on critical path associativity is not advantageous
+        if ( !is_adv1 )
+        {
+          is_adv1 = true;
+        }
+        else
+        {
+          is_adv1 = false;
+        }
+      }
+      else
+      {
+        s1_non_critical = s1;
+        level_non_critical = ntk.level( child1 );
+      }
+      return;
+    } );
+
+    if ( is_adv1 ) // check on the levels of primary fan-in
+    {
+      if ( level_non_critical + 1 >= level_critical)
+      {
+        is_adv1 = false;
+      }
+    }
+    
+    // implementation of associativity
+    if ( is_appl && is_adv1 && is_adv2 )
+    {
+      signal new_and1 = ntk.create_and( s1_non_critical, s2_non_critical ); // new and between non critical signals
+      signal new_and2 = ntk.create_and( new_and1, s2_critical );            // new and that will replace node n
+      ntk.substitute_node( n, new_and2 );                                   // substitution
       return true;
     }
-    else
-      return false;
+    
+    return false;
   }
 
   /* Try the distributivity rule on node n. Return true if the network is updated. */
   bool try_distributivity( node n )
   {
     /* TODO */
-    return false;
+
+      /*
+    bool is_appl = true; // is applicable?
+
+    if ( !ntk.is_on_critical_path( n ) )
+    {
+      return false;
+    }
+
+    // check for applicability and benefit
+    ntk.foreach_fanin( n, [&]( signal const& s1 )
+                       {
+                         node child1 = ntk.get_node( s1 );
+                         if ( ntk.is_on_critical_path( child1 ) )
+                         {
+                           if ( ntk.is_complemented( s1 ) )
+                           {
+
+                             // if both primary inputs are complemented, then distributivity is applicable
+                             // note that here the logic is reversed wrt associativity (true-false-true)
+                             if ( is_appl )
+                             {
+                               is_appl = false;
+                             }
+                             else
+                             {
+                               is_appl = true;
+                             }
+                           }
+                         }
+                         return;
+                       } );
+                       */
+
+      return false;
   }
 
 private:
